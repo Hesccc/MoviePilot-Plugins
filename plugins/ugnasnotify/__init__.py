@@ -11,13 +11,15 @@ from urllib3.exceptions import InsecureRequestWarning
 
 # 第三方库导入
 from pydantic import BaseModel
-
+import pytz
 from typing import Any, List, Dict, Tuple, Optional
 from apscheduler.schedulers.background import BackgroundScheduler
 from app.core.config import settings
 
 from apscheduler.triggers.cron import CronTrigger
 from ruamel.yaml import CommentedMap
+
+
 
 # 本地模块导入
 from app import schemas
@@ -57,6 +59,7 @@ class UgnasNotify(_PluginBase):
 
     # 配置基础参数属性
     _enabled: bool = False  # 启用插件
+    _notify: bool = False # 启用通知
     _cron: str = ""  # 定时计划
     _onlyonce: bool = False  # 立即执行
     _ip: str = None
@@ -65,8 +68,15 @@ class UgnasNotify(_PluginBase):
     _password: str = None
     _url = f"http://127.0.0.1:3001/api/v1/plugin/MsgNotify/send_json?apikey={settings.API_TOKEN}"
 
+    # 定义保存通知ID的文件路径
+    _id_file = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        'token',
+        f"{_username}.id")
+
     http_proxy = None
     https_proxy = None
+
 
 
     def __init__(self):
@@ -80,7 +90,7 @@ class UgnasNotify(_PluginBase):
         # 获取配置内容
         if config:
             self._enabled = config.get("enabled")
-            self._enabled = config.get("notify")
+            self._notify = config.get("notify")
             self._cron = config.get("cron")
             self._onlyonce = config.get("onlyonce")
             self._ip = config.get("ip")
@@ -88,16 +98,68 @@ class UgnasNotify(_PluginBase):
             self._username = config.get("username")
             self._password = config.get("password")
 
+            # 定时服务
+            self._scheduler = BackgroundScheduler(timezone=settings.TZ)
+
             # 加载模块
             if self._enabled or self._onlyonce:
+                self._onlyonce = False
+                self.update_config({
+                    "onlyonce": self._onlyonce,
+                    "enabled": self._enabled,
+                    "notify": self._notify,
+                    "cron": self._cron,
+                    "ip": self._ip,
+                    "port": self._port,
+                    "username": self._username,
+                    "password": self._password,
+                })
 
                 # 立即运行一次
                 if self._onlyonce:
-                    # pass
-                    self.start()
+                    logger.info(f"获取绿联NAS通知，立即运行一次")
+                    self._scheduler.add_job(func=self.start,
+                                            trigger='date',
+                                            run_date=datetime.datetime.now(tz=pytz.timezone(settings.TZ)) + datetime.timedelta(seconds=2),
+                                            name="获取绿联NAS通知")
+
+                if self._enabled and self._cron:
+                    try:
+                        logger.info(f"{self._cron}开始定时获取绿联NAS通知")
+                        self._scheduler.add_job(func=self.start,
+                                                trigger=CronTrigger.from_crontab(self._cron),
+                                                name="获取绿联NAS通知")
+                    except Exception as err:
+                        logger.error(f"获取绿联NAS通知, 定时任务配置错误：{str(err)}")
+                # 启动任务
+                if self._scheduler.get_jobs():
+                    self._scheduler.print_jobs()
+                    self._scheduler.start()
 
     def get_state(self) -> bool:
         return self._enabled
+
+    def get_service(self) -> List[Dict[str, Any]]:
+        pass
+        """
+        注册插件公共服务
+        [{
+            "id": "服务ID",
+            "name": "服务名称",
+            "trigger": "触发器：cron/interval/date/CronTrigger.from_crontab()",
+            "func": self.xxx,
+            "kwargs": {} # 定时器参数
+        }]
+        """
+        # if self._enabled and self._cron:
+        #     logger.info(f"{self._cron}开始定时执行获取绿联通知任务！")
+        #     return [{
+        #         "id": "UgnasNotify",
+        #         "name": "绿联NAS通知推送",
+        #         "trigger": CronTrigger.from_crontab(self._cron),
+        #         "func": self.start,
+        #         "kwargs": {}
+        #         }]
 
     def stop_service(self):
         """
@@ -115,6 +177,36 @@ class UgnasNotify(_PluginBase):
     def get_api(self) -> List[Dict[str, Any]]:
         pass
 
+    def get_new_entries(self,data_list):
+        """
+        从data_list中找到所有比本地记录的id大的条目。
+        返回新条目列表，并且返回当前最大的id值。
+        """
+        if not data_list:
+            return [], 0
+
+        # 获取data_list中的最大id
+        max_data_id = max(item['id'] for item in data_list)
+
+        try:
+            # 尝试读取之前保存的最大id
+            with open(self._id_file, 'r') as file:
+                last_saved_id = int(file.read().strip())
+        except (FileNotFoundError, ValueError):
+            # 文件不存在或内容为空，默认上次保存的id为0
+            last_saved_id = 0
+
+        # 过滤出新的条目（id > last_saved_id）
+        new_entries = [item for item in data_list if item['id'] > last_saved_id]
+
+        return new_entries, max_data_id
+
+    def update_last_id(self,max_id):
+        """
+        更新本地文件中保存的最大id值。
+        """
+        with open(self._id_file, 'w') as file:
+            file.write(str(max_id))
 
     def start(self):
         # 获取rsa_token
@@ -126,20 +218,31 @@ class UgnasNotify(_PluginBase):
         # 获取login结果
         login_result = self.login(ency_password)
 
-        # 获取token_id和再次加密token，使用public_key加密token获得持久化的token。
-        token_id, token = login_result['data']['token_id'], self.encrypted_password(
-            login_result['data']['public_key'], login_result['data']['token'])
+        if 'data' in login_result:
+            # 获取token_id和再次加密token，使用public_key加密token获得持久化的token。
+            token_id = login_result['data']['token_id']
+            token = self.encrypted_password(login_result['data']['public_key'], login_result['data']['token'])
 
-        # 保存token消息
-        self.save_auth_info(token_id=token_id, token=token)
+            # 保存token消息
+            self.save_auth_info(token_id=token_id, token=token)
+        else:
+            token, token_id = login_result
 
         # 获取通知
         notify_result = self.get_notify(token_id=token_id, token=token)
-        for item in notify_result['data']['List']:
-            text = f"通知时间：{datetime.datetime.fromtimestamp(item['time'])}\n内容：{item['body']}\n模块：{item['module']}\n日志ID：{item['id']}\n日志级别：{item['level']}"
-            if self.push_notify(text):
-                logger.info(f"发送通知成功，内容为：{text}")
 
+        # 获取新条目和最大id
+        new_entries, current_max_id = self.get_new_entries(notify_result['data']['List'])
+
+        if new_entries:
+            # 循环发送通知
+            for item in new_entries:
+                text = f"通知时间：{datetime.datetime.fromtimestamp(item['time'])}\n内容：{item['body']}\n模块：{item['module']}\n日志ID：{item['id']}\n日志级别：{item['level']}"
+                if self.push_notify(text):
+                    logger.info(f"发送通知成功，内容为：{text}")
+            self.update_last_id(current_max_id)
+        else:
+            logger.info("没有新的通知需要发送！")
 
     def get_rsa_token(self):
         data = {
@@ -157,8 +260,6 @@ class UgnasNotify(_PluginBase):
                 timeout=10
             )
             if response and response.status_code == 200:
-                logger.error(response.headers.get("X-Rsa-Token"))
-                print(response.headers.get("X-Rsa-Token"))
                 return response.headers.get("X-Rsa-Token")
         except Exception as e:
             logger.error(f"获取 token 时出错，IP: {self._ip}, 端口: {self._port}, 错误信息: {e}")
@@ -177,17 +278,21 @@ class UgnasNotify(_PluginBase):
         }
 
         try:
-            response = RequestUtils().post_res(
-                url=f"https://{self._ip}:{self._port}/ugreen/v1/verify/login",
-                json=data,
-                headers=headers,
-                verify=False,
-                timeout=10)
-            if response and response.status_code == 200:
-                return response.json()
+            status, auth_info = self.load_auth_info()
+            if status:
+                return  auth_info['token'],auth_info['token_id']
+            else:
+                response = RequestUtils().post_res(
+                    url=f"https://{self._ip}:{self._port}/ugreen/v1/verify/login",
+                    json=data,
+                    headers=headers,
+                    verify=False,
+                    timeout=10)
+                if response and response.status_code == 200:
+                    return response.json()
         except Exception as e:
             logger.error(f"登录时出错，IP: {self._ip}, 端口: {self._port}, 错误信息: {e}")
-            return {}
+
 
     def encrypted_password(self, encoded_str, text_to_encrypt):
         decoded_bytes = base64.b64decode(encoded_str)  # 返回 bytes
@@ -214,9 +319,33 @@ class UgnasNotify(_PluginBase):
         encrypted_result = encrypt_with_public_key(decoded_str, text_to_encrypt)
         return encrypted_result
 
+    def load_auth_info(self):
+        config_file = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "token",
+            f"{self._username}.config"
+        )
+
+        if os.path.exists(config_file):
+            with open(config_file, 'r') as f:
+                auth_info = json.load(f)
+                if auth_info['ip'] == self._ip and auth_info['username'] == self._username:
+                    return True, auth_info
+                else:
+                    logger.info(f"{config_file}文件中的IP地址不匹配，需重新生成token。")
+                    return False, None
+        else:
+            logger.info(f"{config_file}文件不存在，需重新生成token。")
+            return False,None
+
     def save_auth_info(self, token_id:str, token:str):
-        os.makedirs("token", exist_ok=True)
-        config_file = os.path.join("token", f"{self._username}.config")
+        os.makedirs(f"os.path.dirname(os.path.abspath(__file__))\\token", exist_ok=True)
+
+        config_file = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            'token',
+            f"{self._username}.config")
+
         auth_info = {
             'ip': self._ip,
             'port': self._port,
