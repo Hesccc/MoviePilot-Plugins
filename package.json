@@ -1,0 +1,14 @@
+{
+  "MsgNotify": {
+    "name": "绿联NAS通知转发",
+    "description": "定时获取绿联NAS通知并推送至企业微信。",
+    "labels": "消息通知",
+    "version": "1.0.0",
+    "icon": "brush.jpg",
+    "author": "Hesssc",
+    "level": 1,
+    "v2": true,
+    "history": {
+      "v1.0.0": "接收外部应用自定义消息并推送。"
+    }
+ }
