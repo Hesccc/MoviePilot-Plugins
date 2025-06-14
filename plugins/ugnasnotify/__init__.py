@@ -59,9 +59,9 @@ class UgnasNotify(_PluginBase):
 
     # 配置基础参数属性
     _enabled: bool = False  # 启用插件
-    _notify: bool = False # 启用通知
-    _cron: str = ""  # 定时计划
     _onlyonce: bool = False  # 立即执行
+    _notify: bool = False # 启用通知
+    _cron: str = None  # 定时计划
     _ip: str = None
     _port: int = None
     _username: str = None
@@ -69,18 +69,19 @@ class UgnasNotify(_PluginBase):
     _url = f"http://127.0.0.1:3001/api/v1/plugin/MsgNotify/send_json?apikey={settings.API_TOKEN}"
 
     # 定义保存通知ID的文件路径
-    _id_file = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        'token',
-        f"{_username}.id")
-
-    http_proxy = None
-    https_proxy = None
-
-
+    _id_file : str =  None
 
     def __init__(self):
         super().__init__()
+        self._scheduler = None
+        self._enabled = False
+        self._notify = False
+        self._cron = None
+        self._onlyonce = False
+        self._ip = None
+        self._port = None
+        self._username = None
+        self._password = None
 
 
     def init_plugin(self, config: dict = None):
@@ -89,10 +90,10 @@ class UgnasNotify(_PluginBase):
 
         # 获取配置内容
         if config:
-            self._enabled = config.get("enabled")
-            self._notify = config.get("notify")
+            self._enabled = config.get("enabled", False)
+            self._notify = config.get("notify", False)
             self._cron = config.get("cron")
-            self._onlyonce = config.get("onlyonce")
+            self._onlyonce = config.get("onlyonce", False)
             self._ip = config.get("ip")
             self._port = config.get("port")
             self._username = config.get("username")
@@ -103,22 +104,21 @@ class UgnasNotify(_PluginBase):
 
             # 加载模块
             if self._enabled or self._onlyonce:
-                self._onlyonce = False
                 self.update_config({
-                    "onlyonce": self._onlyonce,
+                    "onlyonce": False,
                     "enabled": self._enabled,
                     "notify": self._notify,
                     "cron": self._cron,
-                    "ip": self._ip,
-                    "port": self._port,
                     "username": self._username,
                     "password": self._password,
+                    "ip": self._ip,
+                    "port": self._port
                 })
 
                 # 立即运行一次
                 if self._onlyonce:
                     logger.info(f"获取绿联NAS通知，立即运行一次")
-                    self._scheduler.add_job(func=self.start,
+                    self._scheduler.add_job(func=self.notify,
                                             trigger='date',
                                             run_date=datetime.datetime.now(tz=pytz.timezone(settings.TZ)) + datetime.timedelta(seconds=2),
                                             name="获取绿联NAS通知")
@@ -126,7 +126,7 @@ class UgnasNotify(_PluginBase):
                 if self._enabled and self._cron:
                     try:
                         logger.info(f"{self._cron}开始定时获取绿联NAS通知")
-                        self._scheduler.add_job(func=self.start,
+                        self._scheduler.add_job(func=self.notify,
                                                 trigger=CronTrigger.from_crontab(self._cron),
                                                 name="获取绿联NAS通知")
                     except Exception as err:
@@ -138,44 +138,6 @@ class UgnasNotify(_PluginBase):
 
     def get_state(self) -> bool:
         return self._enabled
-
-    def get_service(self) -> List[Dict[str, Any]]:
-        pass
-        """
-        注册插件公共服务
-        [{
-            "id": "服务ID",
-            "name": "服务名称",
-            "trigger": "触发器：cron/interval/date/CronTrigger.from_crontab()",
-            "func": self.xxx,
-            "kwargs": {} # 定时器参数
-        }]
-        """
-        # if self._enabled and self._cron:
-        #     logger.info(f"{self._cron}开始定时执行获取绿联通知任务！")
-        #     return [{
-        #         "id": "UgnasNotify",
-        #         "name": "绿联NAS通知推送",
-        #         "trigger": CronTrigger.from_crontab(self._cron),
-        #         "func": self.start,
-        #         "kwargs": {}
-        #         }]
-
-    def stop_service(self):
-        """
-        退出插件
-        """
-        try:
-            if self._scheduler:
-                self._scheduler.remove_all_jobs()
-                if self._scheduler.running:
-                    self._scheduler.shutdown()
-                self._scheduler = None
-        except Exception as e:
-            logger.error("退出插件失败：%s" % str(e))
-
-    def get_api(self) -> List[Dict[str, Any]]:
-        pass
 
     def get_new_entries(self,data_list):
         """
@@ -208,7 +170,7 @@ class UgnasNotify(_PluginBase):
         with open(self._id_file, 'w') as file:
             file.write(str(max_id))
 
-    def start(self):
+    def notify(self):
         # 获取rsa_token
         rsa_token = self.get_rsa_token()
 
@@ -942,11 +904,6 @@ class UgnasNotify(_PluginBase):
                                                     }
                                                 ]
                                             }
-
-
-
-
-
                                         ]
                                     }
                                 ]
@@ -957,16 +914,21 @@ class UgnasNotify(_PluginBase):
             }
         ], {
             "enabled": False,
-            "notify": False,
-            "msgtype": "Manual",
-            "image_mappings": ""
+            "notify": False
         }
+
+    @staticmethod
+    def get_command() -> List[Dict[str, Any]]:
+        pass
+
+    def get_api(self) -> List[Dict[str, Any]]:
+        pass
 
     def get_page(self) -> List[dict]:
         pass
 
     def stop_service(self):
-        """
-        退出插件
-        """
-        pass
+        if self._scheduler and self._scheduler.running:
+            logger.info("停止绿联NAS通知任务...")
+            self._scheduler.shutdown(wait=False)
+            self._scheduler = None
