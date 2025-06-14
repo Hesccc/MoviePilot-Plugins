@@ -36,7 +36,7 @@ class UgnasNotify(_PluginBase):
     # 插件图标
     plugin_icon = "brush.jpg"
     # 插件版本
-    plugin_version = "1.0.3"
+    plugin_version = "1.0.4"
     # 插件作者
     plugin_author = "Hesssc"
     # 作者主页
@@ -61,7 +61,7 @@ class UgnasNotify(_PluginBase):
     _username: str = None
     _password: str = None
     _url = f"http://127.0.0.1:3001/api/v1/plugin/MsgNotify/send_json?apikey={settings.API_TOKEN}"  # 消息转发地址
-    _id_file = os.path.join(os.path.dirname(os.path.abspath(__file__)),'token','id')  # 定义保存通知ID的文件路径
+    _id_file = None  # 定义保存通知ID的文件路径
     _scheduler: Optional[BackgroundScheduler] = None  # 初始化定时服务
 
 
@@ -79,6 +79,7 @@ class UgnasNotify(_PluginBase):
             self._port = config.get("port")
             self._username = config.get("username")
             self._password = config.get("password")
+            self._id_file = os.path.join(os.path.dirname(os.path.abspath(__file__)),'token','id')
 
             # 更新变量
             self.update_config({
@@ -283,7 +284,7 @@ class UgnasNotify(_PluginBase):
             return False,None
 
     def save_auth_info(self, token_id:str, token:str):
-        os.makedirs(f"os.path.dirname(os.path.abspath(__file__))\\token", exist_ok=True)
+        os.makedirs(os.path.join(os.path.dirname(os.path.abspath(__file__)),'token'), exist_ok=True)
 
         config_file = os.path.join(
             os.path.dirname(os.path.abspath(__file__)),
