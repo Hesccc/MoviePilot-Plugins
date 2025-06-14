@@ -36,7 +36,7 @@ class UgnasNotify(_PluginBase):
     # 插件图标
     plugin_icon = "brush.jpg"
     # 插件版本
-    plugin_version = "1.0.2"
+    plugin_version = "1.0.3"
     # 插件作者
     plugin_author = "Hesssc"
     # 作者主页
@@ -349,555 +349,620 @@ class UgnasNotify(_PluginBase):
         """
         拼装插件配置页面，需要返回两块数据：1、页面配置；2、数据结构
         """
-        
-        MsgTypeOptions = []
-        for item in NotificationType:
-            MsgTypeOptions.append({
-                "title": item.value,
-                "value": item.name
-            })
+        # 动态判断MoviePilot版本，决定定时任务输入框组件类型
+        version = getattr(settings, "VERSION_FLAG", "v1")
+        cron_field_component = "VCronField" if version == "v2" else "VTextField"
         return [
-            {
-                'component': 'VForm',
-                'content': [
-                    {
-                        'component': 'VCard',
-                        'props': {
-                            'variant': 'flat',
-                            'class': 'mb-6',
-                            'color': 'surface'
+                {
+                    'component': 'VForm',
+                    'content': [
+                        {
+                            'component': 'VCard',
+                            'props': {
+                                'variant': 'flat',
+                                'class': 'mb-6',
+                                'color': 'surface'
+                            },
+                            'content': [
+                                {
+                                    'component': 'VCardItem',
+                                    'props': {
+                                        'class': 'px-6 pb-0'
+                                    },
+                                    'content': [
+                                        {
+                                            'component': 'VCardTitle',
+                                            'props': {
+                                                'class': 'd-flex align-center text-h6'
+                                            },
+                                            'content': [
+                                                {
+                                                    'component': 'VIcon',
+                                                    'props': {
+                                                        'style': 'color: #16b1ff;',
+                                                        'class': 'mr-3',
+                                                        'size': 'default'
+                                                    },
+                                                    'text': 'mdi-cog'
+                                                },
+                                                {
+                                                    'component': 'span',
+                                                    'text': '基本设置'
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                },
+                                {
+                                    'component': 'VDivider',
+                                    'props': {
+                                        'class': 'mx-4 my-2'
+                                    }
+                                },
+                                {
+                                    'component': 'VCardText',
+                                    'props': {
+                                        'class': 'px-6 pb-6'
+                                    },
+                                    'content': [
+                                        {
+                                            'component': 'VRow',
+                                            'content': [
+                                                {
+                                                    'component': 'VCol',
+                                                    'props': {
+                                                        'cols': 12,
+                                                        'sm': 4
+                                                    },
+                                                    'content': [
+                                                        {
+                                                            'component': 'VSwitch',
+                                                            'props': {
+                                                                'model': 'enabled',
+                                                                'label': '启用插件',
+                                                                'color': 'primary',
+                                                                'hide-details': True
+                                                            }
+                                                        }
+                                                    ]
+                                                },
+                                                {
+                                                    'component': 'VCol',
+                                                    'props': {
+                                                        'cols': 12,
+                                                        'sm': 4
+                                                    },
+                                                    'content': [
+                                                        {
+                                                            'component': 'VSwitch',
+                                                            'props': {
+                                                                'model': 'notify',
+                                                                'label': '开启通知',
+                                                                'color': 'primary',
+                                                                'hide-details': True
+                                                            }
+                                                        }
+                                                    ]
+                                                },
+                                                {
+                                                    'component': 'VCol',
+                                                    'props': {
+                                                        'cols': 12,
+                                                        'sm': 4
+                                                    },
+                                                    'content': [
+                                                        {
+                                                            'component': 'VSwitch',
+                                                            'props': {
+                                                                'model': 'onlyonce',
+                                                                'label': '立即运行一次',
+                                                                'color': 'primary',
+                                                                'hide-details': True
+                                                            }
+                                                        }
+                                                    ]
+                                                },
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ]
                         },
-                        'content': [
-                            {
-                                'component': 'VCardItem',
-                                'props': {
-                                    'class': 'px-6 pb-0'
+                        {
+                            'component': 'VCard',
+                            'props': {
+                                'variant': 'flat',
+                                'class': 'mb-6',
+                                'color': 'surface'
+                            },
+                            'content': [
+                                {
+                                    'component': 'VCardItem',
+                                    'props': {
+                                        'class': 'px-6 pb-0'
+                                    },
+                                    'content': [
+                                        {
+                                            'component': 'VCardTitle',
+                                            'props': {
+                                                'class': 'd-flex align-center text-h6'
+                                            },
+                                            'content': [
+                                                {
+                                                    'component': 'VIcon',
+                                                    'props': {
+                                                        'style': 'color: #16b1ff;',
+                                                        'class': 'mr-3',
+                                                        'size': 'default'
+                                                    },
+                                                    'text': 'mdi-pencil'
+                                                },
+                                                {
+                                                    'component': 'span',
+                                                    'text': '插件基础配置'
+                                                }
+                                            ]
+                                        }
+                                    ]
                                 },
-                                'content': [
-                                    {
-                                        'component': 'VCardTitle',
-                                        'props': {
-                                            'class': 'd-flex align-center text-h6'
-                                        },
-                                        'content': [
-                                            {
-                                                'component': 'VIcon',
-                                                'props': {
-                                                    'style': 'color: #16b1ff;',
-                                                    'class': 'mr-3',
-                                                    'size': 'default'
-                                                },
-                                                'text': 'mdi-cog'
-                                            },
-                                            {
-                                                'component': 'span',
-                                                'text': '基本设置'
-                                            }
-                                        ]
+                                {
+                                    'component': 'VDivider',
+                                    'props': {
+                                        'class': 'mx-4 my-2'
                                     }
-                                ]
-                            },
-                            {
-                                'component': 'VDivider',
-                                'props': {
-                                    'class': 'mx-4 my-2'
-                                }
-                            },
-                            {
-                                'component': 'VCardText',
-                                'props': {
-                                    'class': 'px-6 pb-6'
                                 },
-                                'content': [
-                                    {
-                                        'component': 'VRow',
-                                        'content': [
-                                            {
-                                                'component': 'VCol',
-                                                'props': {
-                                                    'cols': 12,
-                                                    'sm': 4
-                                                },
-                                                'content': [
-                                                    {
-                                                        'component': 'VSwitch',
-                                                        'props': {
-                                                            'model': 'enabled',
-                                                            'label': '启用插件',
-                                                            'color': 'primary',
-                                                            'hide-details': True
+                                {
+                                    'component': 'VCardText',
+                                    'props': {
+                                        'class': 'px-6 pb-6'
+                                    },
+                                    'content': [
+                                        {
+                                            'component': 'VRow',
+                                            'content': [
+                                                {
+                                                    'component': 'VCol',
+                                                    'props': {
+                                                        "cols": 12,
+                                                        "md": 4
+                                                    },
+                                                    'content': [
+                                                        {
+                                                            'component': cron_field_component,
+                                                            'props': {
+                                                                'model': 'cron',
+                                                                'label': '执行频率',
+                                                                'placeholder': '如：0,30 * * * *',
+                                                                'hint': '输入5位cron表达式，建议每30分钟执行一次。',
+                                                                'persistent-hint': True
+                                                            }
                                                         }
-                                                    }
-                                                ]
-                                            },
-                                            {
-                                                'component': 'VCol',
-                                                'props': {
-                                                    'cols': 12,
-                                                    'sm': 4
+                                                    ]
                                                 },
-                                                'content': [
-                                                    {
-                                                        'component': 'VSwitch',
-                                                        'props': {
-                                                            'model': 'notify',
-                                                            'label': '开启通知',
-                                                            'color': 'primary',
-                                                            'hide-details': True
+                                                {
+                                                    'component': 'VCol',
+                                                    'props': {
+                                                        "cols": 12,
+                                                        "md": 4
+                                                    },
+                                                    'content': [
+                                                        {
+                                                            'component': 'VTextField',
+                                                            'props': {
+                                                                'model': 'ip',
+                                                                'label': 'IP地址',
+                                                                'placeholder': '如：10.10.0.241',
+                                                                'hint': '绿联NAS设备的局域网IP地址',
+                                                                'persistent-hint': True
+                                                            }
                                                         }
-                                                    }
-                                                ]
-                                            },
-                                            {
-                                                'component': 'VCol',
-                                                'props': {
-                                                    'cols': 12,
-                                                    'sm': 4
+                                                    ]
                                                 },
-                                                'content': [
-                                                    {
-                                                        'component': 'VSwitch',
-                                                        'props': {
-                                                            'model': 'onlyonce',
-                                                            'label': '立即运行一次',
-                                                            'color': 'primary',
-                                                            'hide-details': True
+                                                {
+                                                    'component': 'VCol',
+                                                    'props': {
+                                                        "cols": 12,
+                                                        "md": 4
+                                                    },
+                                                    'content': [
+                                                        {
+                                                            'component': 'VTextField',
+                                                            'props': {
+                                                                'model': 'port',
+                                                                'label': '端口',
+                                                                'placeholder': '如：9443(https)',
+                                                                'hint': '绿联NAS设备的访问端口',
+                                                                'persistent-hint': True
+                                                            }
                                                         }
-                                                    }
-                                                ]
-                                            },
-                                        ]
-                                    }
-                                ]
-                            },
-                            ## 分隔符
-                            {
-                                'component': 'VDivider',
-                                'props': {
-                                    'class': 'mx-4 my-2'
+                                                    ]
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            'component': 'VRow',
+                                            'content': [
+                                                {
+                                                    'component': 'VCol',
+                                                    'props': {
+                                                        "cols": 12,
+                                                        "md": 6
+                                                    },
+                                                    'content': [
+                                                        {
+                                                            'component': 'VTextField',
+                                                            'props': {
+                                                                'model': 'username',
+                                                                'label': '用户名',
+                                                                'placeholder': '如：admin',
+                                                                'hint': '绿联NAS登录用户名（建议管理员权限）',
+                                                                'persistent-hint': True
+                                                            }
+                                                        }
+                                                    ]
+                                                },
+                                                {
+                                                    'component': 'VCol',
+                                                    'props': {
+                                                        "cols": 12,
+                                                        "md": 6
+                                                    },
+                                                    'content': [
+                                                        {
+                                                            'component': 'VTextField',
+                                                            'props': {
+                                                                'model': 'password',
+                                                                'label': '密码',
+                                                                'placeholder': '如：password',
+                                                                'hint': '绿联NAS登录密码',
+                                                                'persistent-hint': True,
+                                                                'type': 'password'
+                                                            }
+                                                        }
+                                                    ]
+                                                },
+                                            ]
+                                        }
+                                    ]
                                 }
-                            },
-                            ########################
-                            {
-                                'component': 'VCardItem',
-                                'props': {
-                                    'class': 'px-6 pb-0'
-                                },
-                                'content': [
-                                    {
-                                        'component': 'VCardTitle',
-                                        'props': {
-                                            'class': 'd-flex align-center text-h6'
-                                        },
-                                        'content': [
-                                            {
-                                                'component': 'VIcon',
-                                                'props': {
-                                                    'style': 'color: #16b1ff;',
-                                                    'class': 'mr-3',
-                                                    'size': 'default'
-                                                },
-                                                'text': 'mdi-pencil'
-                                            },
-                                            {
-                                                'component': 'span',
-                                                'text': '插件基础配置'
-                                            }
-                                        ]
-                                    }
-                                ]
-                            },
-                            ## 分隔符
-                            {
-                                'component': 'VDivider',
-                                'props': {
-                                    'class': 'mx-4 my-2'
-                                }
-                            },
-                            #########################
-
-                            {
-                                'component': 'VRow',
-                                'content': [
-                                    {
-                                        'component': 'VCol',
-                                        'props': {
-                                            "cols": 12,
-                                            "md": 4
-                                        },
-                                        'content': [
-                                            {
-                                                'component': 'VCronField',
-                                                'props': {
-                                                    'model': 'cron',
-                                                    'label': '执行频率',
-                                                    'placeholder': '如：0 0-1 * * FRI,SUN；建议30分钟执行一次。',
-                                                }
-                                            }
-                                        ]
-                                    },
-                                    {
-                                        'component': 'VCol',
-                                        'props': {
-                                            "cols": 12,
-                                            "md": 4
-                                        },
-                                        'content': [
-                                            {
-                                                'component': 'VTextField',
-                                                'props': {
-                                                    'model': 'ip',
-                                                    'label': 'IP地址',
-                                                    'placeholder': '如：10.10.0.241',
-                                                }
-                                            }
-                                        ]
-                                    },
-                                    {
-                                        'component': 'VCol',
-                                        'props': {
-                                            "cols": 12,
-                                            "md": 4
-                                        },
-                                        'content': [
-                                            {
-                                                'component': 'VTextField',
-                                                'props': {
-                                                    'model': 'port',
-                                                    'label': '端口',
-                                                    'placeholder': '如：9443(https)',
-                                                }
-                                            }
-                                        ]
-                                    }
-                                ]
-                            },
-                            {
-                                'component': 'VRow',
-                                'content': [
-                                    {
-                                        'component': 'VCol',
-                                        'props': {
-                                            "cols": 12,
-                                            "md": 6
-                                        },
-                                        'content': [
-                                            {
-                                                'component': 'VTextField',
-                                                'props': {
-                                                    'model': 'username',
-                                                    'label': '用户名',
-                                                    'placeholder': '如：admin',
-                                                }
-                                            }
-                                        ]
-                                    },
-                                    {
-                                        'component': 'VCol',
-                                        'props': {
-                                            "cols": 12,
-                                            "md": 6
-                                        },
-                                        'content': [
-                                            {
-                                                'component': 'VTextField',
-                                                'props': {
-                                                    'model': 'password',
-                                                    'label': '密码',
-                                                    'placeholder': '如：password',
-                                                }
-                                            }
-                                        ]
-                                    },
-                                ]
-                            },
-                        ]
-                    },
-                    {
-                        'component': 'VCard',
-                        'props': {
-                            'variant': 'flat',
-                            'class': 'mb-6',
-                            'color': 'surface'
+                            ]
                         },
-                        'content': [
-                            {
-                                'component': 'VCardItem',
-                                'props': {
-                                    'class': 'px-6 pb-0'
-                                },
-                                'content': [
-                                    {
-                                        'component': 'VCardTitle',
-                                        'props': {
-                                            'class': 'd-flex align-center text-h6 mb-0'
-                                        },
-                                        'content': [
-                                            {
-                                                'component': 'VIcon',
-                                                'props': {
-                                                    'style': 'color: #16b1ff;',
-                                                    'class': 'mr-3',
-                                                    'size': 'default'
-                                                },
-                                                'text': 'mdi-information'
-                                            },
-                                            {
-                                                'component': 'span',
-                                                'text': '插件使用说明'
-                                            }
-                                        ]
-                                    }
-                                ]
+                        {
+                            'component': 'VCard',
+                            'props': {
+                                'variant': 'flat',
+                                'class': 'mb-6',
+                                'color': 'surface'
                             },
-                            {
-                                'component': 'VDivider',
-                                'props': {
-                                    'class': 'mx-4 my-2'
+                            'content': [
+                                {
+                                    'component': 'VCardItem',
+                                    'props': {
+                                        'class': 'px-6 pb-0'
+                                    },
+                                    'content': [
+                                        {
+                                            'component': 'VCardTitle',
+                                            'props': {
+                                                'class': 'd-flex align-center text-h6 mb-0'
+                                            },
+                                            'content': [
+                                                {
+                                                    'component': 'VIcon',
+                                                    'props': {
+                                                        'style': 'color: #16b1ff;',
+                                                        'class': 'mr-3',
+                                                        'size': 'default'
+                                                    },
+                                                    'text': 'mdi-information'
+                                                },
+                                                {
+                                                    'component': 'span',
+                                                    'text': '插件使用说明'
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                },
+                                {
+                                    'component': 'VDivider',
+                                    'props': {
+                                        'class': 'mx-4 my-2'
+                                    }
+                                },
+                                {
+                                    'component': 'VCardText',
+                                    'props': {
+                                        'class': 'px-6 pb-6'
+                                    },
+                                    'content': [
+                                        {
+                                            'component': 'VList',
+                                            'props': {
+                                                'lines': 'two',
+                                                'density': 'comfortable'
+                                            },
+                                            'content': [
+                                                {
+                                                    'component': 'VListItem',
+                                                    'props': {
+                                                        'lines': 'two'
+                                                    },
+                                                    'content': [
+                                                        {
+                                                            'component': 'div',
+                                                            'props': {
+                                                                'class': 'd-flex align-items-start'
+                                                            },
+                                                            'content': [
+                                                                {
+                                                                    'component': 'VIcon',
+                                                                    'props': {
+                                                                        'color': 'primary',
+                                                                        'class': 'mt-1 mr-2'
+                                                                    },
+                                                                    'text': 'mdi-api'
+                                                                },
+                                                                {
+                                                                    'component': 'div',
+                                                                    'props': {
+                                                                        'class': 'text-subtitle-1 font-weight-regular mb-1'
+                                                                    },
+                                                                    'text': '前提条件'
+                                                                }
+                                                            ]
+                                                        },
+                                                        {
+                                                            'component': 'div',
+                                                            'props': {
+                                                                'class': 'text-body-2 ml-8'
+                                                            },
+                                                            'text': '1、已配置企业微信通知，MoviePilot能正常与企业微信进行交互。'
+                                                        },
+                                                        {
+                                                            'component': 'div',
+                                                            'props': {
+                                                                'class': 'text-body-2 ml-8'
+                                                            },
+                                                            'text': '2、已安装并启用 由KoWming佬开发的"外部消息转发"插件。'
+                                                        }
+                                                    ]
+                                                },
+                                                {
+                                                    'component': 'VListItem',
+                                                    'props': {
+                                                        'lines': 'two'
+                                                    },
+                                                    'content': [
+                                                        {
+                                                            'component': 'div',
+                                                            'props': {
+                                                                'class': 'd-flex align-items-start'
+                                                            },
+                                                            'content': [
+                                                                {
+                                                                    'component': 'VIcon',
+                                                                    'props': {
+                                                                        'color': 'success',
+                                                                        'class': 'mt-1 mr-2'
+                                                                    },
+                                                                    'text': 'mdi-format-list-bulleted'
+                                                                },
+                                                                {
+                                                                    'component': 'div',
+                                                                    'props': {
+                                                                        'class': 'text-subtitle-1 font-weight-regular mb-1'
+                                                                    },
+                                                                    'text': '参数说明'
+                                                                }
+                                                            ]
+                                                        },
+                                                        {
+                                                            'component': 'div',
+                                                            'props': {
+                                                                'class': 'text-body-2 ml-8'
+                                                            },
+                                                            'text': '填写绿联NAS设备所在的局域网IP地址及端口，获取通知需要登录凭（建议管理员权限账户）'
+                                                        },
+                                                        {
+                                                            'component': 'div',
+                                                            'props': {
+                                                                'class': 'text-body-2 ml-8'
+                                                            },
+                                                            'text': '关于插件的执行频率设置，强烈建议将任务执行间隔设定为每30分钟一次，不会对NAS造成过大的负载压力。'
+                                                        }
+                                                    ]
+                                                },
+                                                {
+                                                    'component': 'VListItem',
+                                                    'props': {
+                                                        'lines': 'two'
+                                                    },
+                                                    'content': [
+                                                        {
+                                                            'component': 'div',
+                                                            'props': {
+                                                                'class': 'd-flex align-items-start'
+                                                            },
+                                                            'content': [
+                                                                {
+                                                                    'component': 'VIcon',
+                                                                    'props': {
+                                                                        'color': 'warning',
+                                                                        'class': 'mt-1 mr-2'
+                                                                    },
+                                                                    'text': 'mdi-alert'
+                                                                },
+                                                                {
+                                                                    'component': 'div',
+                                                                    'props': {
+                                                                        'class': 'text-subtitle-1 font-weight-regular mb-1'
+                                                                    },
+                                                                    'text': '特别说明'
+                                                                }
+                                                            ]
+                                                        },
+                                                        {
+                                                            'component': 'div',
+                                                            'props': {
+                                                                'class': 'text-body-2 ml-8'
+                                                            },
+                                                            'text': '插件会自动保存登录token，避免频繁登录对NAS造成压力。首次运行或token过期时会自动重新登录。'
+                                                        },
+                                                        {
+                                                            'component': 'div',
+                                                            'props': {
+                                                                'class': 'text-body-2 ml-8'
+                                                            },
+                                                            'text': '通知内容包含：通知时间、内容、模块、日志ID、日志级别等信息。'
+                                                        }
+                                                    ]
+                                                },
+                                                {
+                                                    'component': 'VListItem',
+                                                    'props': {
+                                                        'lines': 'two'
+                                                    },
+                                                    'content': [
+                                                        {
+                                                            'component': 'div',
+                                                            'props': {
+                                                                'class': 'd-flex align-items-start'
+                                                            },
+                                                            'content': [
+                                                                {
+                                                                    'component': 'VIcon',
+                                                                    'props': {
+                                                                        'color': 'error',
+                                                                        'class': 'mt-1 mr-2'
+                                                                    },
+                                                                    'text': 'mdi-heart'
+                                                                },
+                                                                {
+                                                                    'component': 'div',
+                                                                    'props': {
+                                                                        'class': 'text-subtitle-1 font-weight-regular mb-1'
+                                                                    },
+                                                                    'text': '致谢'
+                                                                }
+                                                            ]
+                                                        },
+                                                        {
+                                                            'component': 'div',
+                                                            'props': {
+                                                                'class': 'text-body-2 ml-8'
+                                                            },
+                                                            'content': [
+                                                                {
+                                                                    'component': 'span',
+                                                                    'text': '参考了 '
+                                                                },
+                                                                {
+                                                                    'component': 'a',
+                                                                    'props': {
+                                                                        'href': 'https://github.com/KoWming/MoviePilot-Plugins',
+                                                                        'target': '_blank',
+                                                                        'style': 'text-decoration: underline;'
+                                                                    },
+                                                                    'content': [
+                                                                        {
+                                                                            'component': 'u',
+                                                                            'text': 'KoWming/MoviePilot-Plugins'
+                                                                        }
+                                                                    ]
+                                                                },
+                                                                {
+                                                                    'component': 'span',
+                                                                    'text': ' 项目，实现了插件的相关功能。特此感谢 '
+                                                                },
+                                                                {
+                                                                    'component': 'a',
+                                                                    'props': {
+                                                                        'href': 'https://github.com/KoWming',
+                                                                        'target': '_blank',
+                                                                        'style': 'text-decoration: underline;'
+                                                                    },
+                                                                    'content': [
+                                                                        {
+                                                                            'component': 'u',
+                                                                            'text': 'KoWming'
+                                                                        }
+                                                                    ]
+                                                                },
+                                                                {
+                                                                    'component': 'span',
+                                                                    'text': ' 大佬！'
+                                                                }
+                                                            ]
+                                                        },
+                                                        {
+                                                            'component': 'div',
+                                                            'props': {
+                                                                'class': 'text-body-2 ml-8'
+                                                            },
+                                                            'content': [
+                                                                {
+                                                                    'component': 'span',
+                                                                    'text': '参考了 '
+                                                                },
+                                                                {
+                                                                    'component': 'a',
+                                                                    'props': {
+                                                                        'href': 'https://mp.weixin.qq.com/s/lzlTmj6eczyrdz60Gvllaw',
+                                                                        'target': '_blank',
+                                                                        'style': 'text-decoration: underline;'
+                                                                    },
+                                                                    'content': [
+                                                                        {
+                                                                            'component': 'u',
+                                                                            'text': 'NAS通知早知道，把绿联云NAS里的通知消息定时推送到微信'
+                                                                        }
+                                                                    ]
+                                                                },
+                                                                {
+                                                                    'component': 'span',
+                                                                    'text': ' 文章，实现插件中绿联NAS登录的相关功能。特此感谢 '
+                                                                },
+                                                                {
+                                                                    'component': 'a',
+                                                                    'props': {
+                                                                        'href': 'https://zhiyou.smzdm.com/member/1477395615/',
+                                                                        'target': '_blank',
+                                                                        'style': 'text-decoration: underline;'
+                                                                    },
+                                                                    'content': [
+                                                                        {
+                                                                            'component': 'u',
+                                                                            'text': 'koryking'
+                                                                        }
+                                                                    ]
+                                                                },
+                                                                {
+                                                                    'component': 'span',
+                                                                    'text': ' 大佬！'
+                                                                }
+                                                            ]
+                                                        }
+                                                    ]
+                                                }
+                                            ]
+                                        }
+                                    ]
                                 }
-                            },
-                            {
-                                'component': 'VCardText',
-                                'props': {
-                                    'class': 'px-6 pb-6'
-                                },
-                                'content': [
-                                    {
-                                        'component': 'VList',
-                                        'props': {
-                                            'lines': 'two',
-                                            'density': 'comfortable'
-                                        },
-                                        'content': [
-                                            {
-                                                'component': 'VListItem',
-                                                'props': {
-                                                    'lines': 'two'
-                                                },
-                                                'content': [
-                                                    {
-                                                        'component': 'div',
-                                                        'props': {
-                                                            'class': 'd-flex align-items-start'
-                                                        },
-                                                        'content': [
-                                                            {
-                                                                'component': 'VIcon',
-                                                                'props': {
-                                                                    'color': 'primary',
-                                                                    'class': 'mt-1 mr-2'
-                                                                },
-                                                                'text': 'mdi-api'
-                                                            },
-                                                            {
-                                                                'component': 'div',
-                                                                'props': {
-                                                                    'class': 'text-subtitle-1 font-weight-regular mb-1'
-                                                                },
-                                                                'text': '前提条件'
-                                                            }
-                                                        ]
-                                                    },
-                                                    {
-                                                        'component': 'div',
-                                                        'props': {
-                                                            'class': 'text-body-2 ml-8'
-                                                        },
-                                                        'text': '1、已配置企业微信通知，MoviePilot能正常与企业微信进行交互。'
-                                                    },
-                                                    {
-                                                        'component': 'div',
-                                                        'props': {
-                                                            'class': 'text-body-2 ml-8'
-                                                        },
-                                                        'text': '2、已安装并启用 由KoWming佬开发的"外部消息转发"插件。'
-                                                    }
-                                                ]
-                                            },
-                                            {
-                                                'component': 'VListItem',
-                                                'props': {
-                                                    'lines': 'two'
-                                                },
-                                                'content': [
-                                                    {
-                                                        'component': 'div',
-                                                        'props': {
-                                                            'class': 'd-flex align-items-start'
-                                                        },
-                                                        'content': [
-                                                            {
-                                                                'component': 'VIcon',
-                                                                'props': {
-                                                                    'color': 'primary',
-                                                                    'class': 'mt-1 mr-2'
-                                                                },
-                                                                'text': 'mdi-api'
-                                                            },
-                                                            {
-                                                                'component': 'div',
-                                                                'props': {
-                                                                    'class': 'text-subtitle-1 font-weight-regular mb-1'
-                                                                },
-                                                                'text': '参数说明'
-                                                            }
-                                                        ]
-                                                    },
-                                                    {
-                                                        'component': 'div',
-                                                        'props': {
-                                                            'class': 'text-body-2 ml-8'
-                                                        },
-                                                        'text': '填写绿联NAS设备所在的局域网IP地址及端口，获取通知需要登录凭（建议管理员权限账户）'
-                                                    },
-                                                    {
-                                                        'component': 'div',
-                                                        'props': {
-                                                            'class': 'text-body-2 ml-8'
-                                                        },
-                                                        'text': '关于插件的执行频率设置，强烈建议将任务执行间隔设定为每30分钟一次，不会对NAS造成过大的负载压力。'
-                                                    }
-                                                ]
-                                            },
-                                            {
-                                                'component': 'VListItem',
-                                                'props': {
-                                                    'lines': 'two'
-                                                },
-                                                'content': [
-                                                    {
-                                                        'component': 'div',
-                                                        'props': {
-                                                            'class': 'd-flex align-items-start'
-                                                        },
-                                                        'content': [
-                                                            {
-                                                                'component': 'VIcon',
-                                                                'props': {
-                                                                    'color': 'error',
-                                                                    'class': 'mt-1 mr-2'
-                                                                },
-                                                                'text': 'mdi-heart'
-                                                            },
-                                                            {
-                                                                'component': 'div',
-                                                                'props': {
-                                                                    'class': 'text-subtitle-1 font-weight-regular mb-1'
-                                                                },
-                                                                'text': '致谢'
-                                                            }
-                                                        ]
-                                                    },
-                                                    {
-                                                        'component': 'div',
-                                                        'props': {
-                                                            'class': 'text-body-2 ml-8'
-                                                        },
-                                                        'content': [
-                                                            {
-                                                                'component': 'span',
-                                                                'text': '参考了 '
-                                                            },
-                                                            {
-                                                                'component': 'a',
-                                                                'props': {
-                                                                    'href': 'https://github.com/KoWming/MoviePilot-Plugins',
-                                                                    'target': '_blank',
-                                                                    'style': 'text-decoration: underline;'
-                                                                },
-                                                                'content': [
-                                                                    {
-                                                                        'component': 'u',
-                                                                        'text': 'KoWming/MoviePilot-Plugins'
-                                                                    }
-                                                                ]
-                                                            },
-                                                            {
-                                                                'component': 'span',
-                                                                'text': ' 项目，实现了插件的相关功能。特此感谢 '
-                                                            },
-                                                            {
-                                                                'component': 'a',
-                                                                'props': {
-                                                                    'href': 'https://github.com/KoWming',
-                                                                    'target': '_blank',
-                                                                    'style': 'text-decoration: underline;'
-                                                                },
-                                                                'content': [
-                                                                    {
-                                                                        'component': 'u',
-                                                                        'text': 'KoWming'
-                                                                    }
-                                                                ]
-                                                            },
-                                                            {
-                                                                'component': 'span',
-                                                                'text': ' 大佬！'
-                                                            }
-                                                        ]
-                                                    },
-                                                    {
-                                                        'component': 'div',
-                                                        'props': {
-                                                            'class': 'text-body-2 ml-8'
-                                                        },
-                                                        'content': [
-                                                            {
-                                                                'component': 'span',
-                                                                'text': '参考了 '
-                                                            },
-                                                            {
-                                                                'component': 'a',
-                                                                'props': {
-                                                                    'href': 'https://mp.weixin.qq.com/s/lzlTmj6eczyrdz60Gvllaw',
-                                                                    'target': '_blank',
-                                                                    'style': 'text-decoration: underline;'
-                                                                },
-                                                                'content': [
-                                                                    {
-                                                                        'component': 'u',
-                                                                        'text': 'NAS通知早知道，把绿联云NAS里的通知消息定时推送到微信'
-                                                                    }
-                                                                ]
-                                                            },
-                                                            {
-                                                                'component': 'span',
-                                                                'text': ' 文章，实现插件中绿联NAS登录的相关功能。特此感谢 '
-                                                            },
-                                                            {
-                                                                'component': 'a',
-                                                                'props': {
-                                                                    'href': 'https://zhiyou.smzdm.com/member/1477395615/',
-                                                                    'target': '_blank',
-                                                                    'style': 'text-decoration: underline;'
-                                                                },
-                                                                'content': [
-                                                                    {
-                                                                        'component': 'u',
-                                                                        'text': 'koryking'
-                                                                    }
-                                                                ]
-                                                            },
-                                                            {
-                                                                'component': 'span',
-                                                                'text': ' 大佬！'
-                                                            }
-                                                        ]
-                                                    }
-                                                ]
-                                            }
-                                        ]
-                                    }
-                                ]
-                            }
-                        ]
-                    }
-                ]
-            }
-        ], {
-            "enabled": False,
-            "notify": False
-        }
+                            ]
+                        }
+                    ]
+                }
+            ], {
+                   "enabled": False,
+                   "notify": True,
+                   "onlyonce": False,
+                   "cron": "0,30 * * * *",
+                   "ip": "",
+                   "port": "",
+                   "username": "",
+                   "password": ""
+               }
 
     @staticmethod
     def get_command() -> List[Dict[str, Any]]:
