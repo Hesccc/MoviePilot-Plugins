@@ -1,5 +1,6 @@
 # 标准库导入
 import os
+import sys
 import base64
 import json
 import datetime
@@ -29,37 +30,26 @@ from app.schemas import  NotificationType
 from app.utils.http import RequestUtils
 
 class UgnasNotify(_PluginBase):
-    # 插件名称
-    plugin_name = "绿联NAS通知转发"
-    # 插件描述
-    plugin_desc = "定时获取绿联NAS通知并推送至企业微信"
-    # 插件图标
-    plugin_icon = "brush.jpg"
-    # 插件版本
-    plugin_version = "1.0.4"
-    # 插件作者
-    plugin_author = "Hesssc"
-    # 作者主页
-    author_url = "https://github.com/Hesccc"
-    # 插件配置项ID前缀
-    plugin_config_prefix = "UgnasNotify_"
-    # 加载顺序
-    plugin_order = 30
-    # 可使用的用户级别
-    auth_level = 1
-
-    # 加载的模块
-    _site_schema: list = []
+    plugin_name = "绿联NAS通知转发"  # 插件名称
+    plugin_desc = "定时获取绿联NAS通知,通过外部消息转发插件转发至企业微信"  # 插件描述
+    plugin_icon = "brush.jpg"  # 插件图标
+    plugin_version = "1.0.5"   # 插件版本
+    plugin_author = "Hesccc"   # 插件作者
+    author_url = "https://github.com/Hesccc"  # 作者主页
+    plugin_config_prefix = "UgnasNotify_"  # 插件配置项ID前缀
+    plugin_order = 30  # 加载顺序
+    auth_level = 1  # 可使用的用户级别
+    _site_schema: list = []  # 加载定时模块
 
     # 配置基础参数属性
     _enabled: bool = False  # 启用插件
     _onlyonce: bool = False  # 立即执行
     _notify: bool = False # 启用通知
     _cron: str = None  # 定时计划
-    _ip: str = None
-    _port: int = None
-    _username: str = None
-    _password: str = None
+    _ip: str = None  # NAS内网IP地址
+    _port: int = None  # NAS端口
+    _username: str = None  # NAS登录账号,最好为管理员账号
+    _password: str = None  # NAS登录账号的密码
     _url = f"http://127.0.0.1:3001/api/v1/plugin/MsgNotify/send_json?apikey={settings.API_TOKEN}"  # 消息转发地址
     _id_file = None  # 定义保存通知ID的文件路径
     _scheduler: Optional[BackgroundScheduler] = None  # 初始化定时服务
@@ -108,7 +98,7 @@ class UgnasNotify(_PluginBase):
 
                 if self._enabled and self._cron:
                     try:
-                        logger.info(f"插件日志：创建定时计划获取通知，by {self._cron}")
+                        logger.info(f"插件日志：创建定时计划获取通知,by {self._cron}")
                         self._scheduler.add_job(func=self.notify,
                                                 trigger=CronTrigger.from_crontab(self._cron),
                                                 name="获取绿联NAS通知")
@@ -125,7 +115,7 @@ class UgnasNotify(_PluginBase):
     def get_new_entries(self,data_list):
         """
         从data_list中找到所有比本地记录的id大的条目。
-        返回新条目列表，并且返回当前最大的id值。
+        返回新条目列表,并且返回当前最大的id值。
         """
         if not data_list:
             return [], 0
@@ -138,7 +128,7 @@ class UgnasNotify(_PluginBase):
             with open(self._id_file, 'r') as file:
                 last_saved_id = int(file.read().strip())
         except (FileNotFoundError, ValueError):
-            # 文件不存在或内容为空，默认上次保存的id为0
+            # 文件不存在或内容为空,默认上次保存的id为0
             last_saved_id = 0
 
         # 过滤出新的条目（id > last_saved_id）
@@ -154,48 +144,62 @@ class UgnasNotify(_PluginBase):
             file.write(str(max_id))
 
     def notify(self):
-        # 获取rsa_token
-        rsa_token = self.get_rsa_token()
-
-        # 使用rsa_token加密明文密码
-        ency_password = self.encrypted_password(rsa_token, self._password)
-
-        # 获取login结果
-        login_result = self.login(ency_password)
-
-        if 'data' in login_result:
-            # 获取token_id和再次加密token，使用public_key加密token获得持久化的token。
-            token_id = login_result['data']['token_id']
-            token = self.encrypted_password(login_result['data']['public_key'], login_result['data']['token'])
-
-            # 保存token消息
-            self.save_auth_info(token_id=token_id, token=token)
+        """
+        发送通知
+        """
+        if not self.check_network():  # 检查网络连接
+            if self._scheduler:
+                self.stop_service()  # 停止定时任务
         else:
-            token, token_id = login_result
+            logger.info(f"插件日志：网络连接正常,开始获取绿联NAS通知.")
+            rsa_token = self.get_rsa_token()  # 获取 rsa_token
+            ency_password = self.encrypted_password(rsa_token, self._password)  # 使用 rsa_token 加密明文密码
+            login_result = self.login(ency_password)  # 获取 login 返回的结果
 
-        # 获取通知
-        notify_result = self.get_notify(token_id=token_id, token=token)
+            if 'data' in login_result:
+                token_id = login_result['data']['token_id']  # 获取登录 token_id
+                token = self.encrypted_password(login_result['data']['public_key'], login_result['data']['token'])  # 获取token_id和再次加密token,使用public_key加密token获得持久化的token
+                self.save_auth_info(token_id=token_id, token=token)   # 保存token凭据,用于下次运行任务使用
+            else:
+                token, token_id = login_result
 
-        # 获取新条目和最大id
-        new_entries, current_max_id = self.get_new_entries(notify_result['data']['List'])
+            notify_result = self.get_notify(token_id=token_id, token=token)  # 获取通知
+            new_entries, current_max_id = self.get_new_entries(notify_result['data']['List'])  # 获取新条目和最大id
 
-        if new_entries:
-            # 循环发送通知
-            for item in new_entries:
-                text = f"通知时间：{datetime.datetime.fromtimestamp(item['time'])}\n内容：{item['body']}\n模块：{item['module']}\n日志ID：{item['id']}\n日志级别：{item['level']}"
-                if self.push_notify(text):
-                    logger.info(f"插件日志：发送新增通知成功，通知内容为：{text}")
-            self.update_last_id(current_max_id)
-        else:
-            logger.info("插件日志：没有获取到新增的通知内容，无事可做.")
+            if new_entries:
+                for item in new_entries:  # 循环发送绿联NAS通知
+                    text = f"通知时间：{datetime.datetime.fromtimestamp(item['time'])}\n内容：{item['body']}\n模块：{item['module']}\n日志ID：{item['id']}\n日志级别：{item['level']}"
+                    if self.push_notify(text):
+                        logger.info(f"插件日志：发送新增通知成功,通知内容为：{text}")
+                self.update_last_id(current_max_id)
+            else:
+                logger.info("插件日志：没有获取到新增的通知内容,无事可做.")
+
+
+    def check_network(self) -> bool:
+        """
+        检查网络连接是否正常
+        """
+        try:
+            response = RequestUtils().get_res(
+                url=f"https://{self._ip}:{self._port}/ugreen/v1/verify/check?token=",
+                verify=False,
+                timeout=10
+            )
+            if response and response.status_code == 200:
+                return True
+        except Exception as e:
+            logger.error(f"插件日志：网络连接检查失败,IP: {self._ip}, 端口: {self._port}, 错误信息: {e}")
+            return False
+
 
     def get_rsa_token(self):
-        data = {
-            "username": self._username
-        }
-        headers = {
-            "Content-Type": "application/json"
-        }
+        """
+        获取RSA Token
+        """
+        data = { "username": self._username }
+        headers = { "Content-Type": "application/json" }
+
         try:
             response = RequestUtils().post_res(
                 url=f"https://{self._ip}:{self._port}/ugreen/v1/verify/check?token=",
@@ -207,7 +211,7 @@ class UgnasNotify(_PluginBase):
             if response and response.status_code == 200:
                 return response.headers.get("X-Rsa-Token")
         except Exception as e:
-            logger.error(f"插件日志：获取token出错，IP: {self._ip}, 端口: {self._port}, 错误信息: {e}")
+            logger.error(f"插件日志：获取token出错,IP: {self._ip}, 端口: {self._port}, 错误信息: {e}")
             return None
 
     def login(self, ency_password:str):
@@ -236,7 +240,7 @@ class UgnasNotify(_PluginBase):
                 if response and response.status_code == 200:
                     return response.json()
         except Exception as e:
-            logger.error(f"插件日志：登录时出错，IP: {self._ip}, 端口: {self._port}, 错误信息: {e}")
+            logger.error(f"插件日志：登录时出错,IP: {self._ip}, 端口: {self._port}, 错误信息: {e}")
 
 
     def encrypted_password(self, encoded_str, text_to_encrypt):
@@ -245,7 +249,7 @@ class UgnasNotify(_PluginBase):
 
         def encrypt_with_public_key(decoded_str, plaintext) -> str:
             """
-            使用已有的公钥加密字符串，返回 Base64 结果（兼容 JSEncrypt）
+            使用已有的公钥加密字符串,返回 Base64 结果（兼容 JSEncrypt）
             :param decoded_str: PEM 格式的公钥（字符串）
             :param plaintext: 要加密的文本
             :return: Base64 编码的加密结果
@@ -277,10 +281,10 @@ class UgnasNotify(_PluginBase):
                 if auth_info['ip'] == self._ip and auth_info['username'] == self._username:
                     return True, auth_info
                 else:
-                    logger.info(f"插件日志：{config_file}文件中的IP地址与{self._ip}不匹配，需重新生成token.")
+                    logger.info(f"插件日志：{config_file}文件中的IP地址与{self._ip}不匹配,需重新生成token.")
                     return False, None
         else:
-            logger.info(f"插件日志：{config_file}文件不存在，需第一次获取token.")
+            logger.info(f"插件日志：{config_file}文件不存在,需第一次获取token.")
             return False,None
 
     def save_auth_info(self, token_id:str, token:str):
@@ -324,7 +328,7 @@ class UgnasNotify(_PluginBase):
             response.raise_for_status()
             return response.json()
         except Exception as e:
-            logger.error(f"插件日志：获取通知时内容出错，IP: {self._ip}, 端口: {self._port}, 错误信息: {e}")
+            logger.error(f"插件日志：获取通知时内容出错,IP: {self._ip}, 端口: {self._port}, 错误信息: {e}")
             return {}
 
     def push_notify(self, message:str):
@@ -342,15 +346,15 @@ class UgnasNotify(_PluginBase):
             if response.raise_for_status() == 200:
                 return True
         except Exception as e:
-            logger.error(f"插件日志：发送{message}出错，错误信息: {e}")
+            logger.error(f"插件日志：发送{message}出错,错误信息: {e}")
             return False
 
 
     def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
         """
-        拼装插件配置页面，需要返回两块数据：1、页面配置；2、数据结构
+        拼装插件配置页面,需要返回两块数据：1、页面配置；2、数据结构
         """
-        # 动态判断MoviePilot版本，决定定时任务输入框组件类型
+        # 动态判断MoviePilot版本,决定定时任务输入框组件类型
         version = getattr(settings, "VERSION_FLAG", "v1")
         cron_field_component = "VCronField" if version == "v2" else "VTextField"
         return [
@@ -534,7 +538,7 @@ class UgnasNotify(_PluginBase):
                                                                 'model': 'cron',
                                                                 'label': '执行频率',
                                                                 'placeholder': '如：0,30 * * * *',
-                                                                'hint': '输入5位cron表达式，建议每30分钟执行一次。',
+                                                                'hint': '输入5位cron表达式,建议每30分钟执行一次。',
                                                                 'persistent-hint': True
                                                             }
                                                         }
@@ -718,7 +722,7 @@ class UgnasNotify(_PluginBase):
                                                             'props': {
                                                                 'class': 'text-body-2 ml-8'
                                                             },
-                                                            'text': '1、已配置企业微信通知，MoviePilot能正常与企业微信进行交互。'
+                                                            'text': '1、已配置企业微信通知,MoviePilot能正常与企业微信进行交互。'
                                                         },
                                                         {
                                                             'component': 'div',
@@ -763,14 +767,14 @@ class UgnasNotify(_PluginBase):
                                                             'props': {
                                                                 'class': 'text-body-2 ml-8'
                                                             },
-                                                            'text': '填写绿联NAS设备所在的局域网IP地址及端口，获取通知需要登录凭（建议管理员权限账户）'
+                                                            'text': '填写绿联NAS设备所在的局域网IP地址及端口,获取通知需要登录凭（建议管理员权限账户）'
                                                         },
                                                         {
                                                             'component': 'div',
                                                             'props': {
                                                                 'class': 'text-body-2 ml-8'
                                                             },
-                                                            'text': '关于插件的执行频率设置，强烈建议将任务执行间隔设定为每30分钟一次，不会对NAS造成过大的负载压力。'
+                                                            'text': '关于插件的执行频率设置,强烈建议将任务执行间隔设定为每30分钟一次,不会对NAS造成过大的负载压力。'
                                                         }
                                                     ]
                                                 },
@@ -808,7 +812,7 @@ class UgnasNotify(_PluginBase):
                                                             'props': {
                                                                 'class': 'text-body-2 ml-8'
                                                             },
-                                                            'text': '插件会自动保存登录token，避免频繁登录对NAS造成压力。首次运行或token过期时会自动重新登录。'
+                                                            'text': '插件会自动保存登录token,避免频繁登录对NAS造成压力。首次运行或token过期时会自动重新登录。'
                                                         },
                                                         {
                                                             'component': 'div',
@@ -874,7 +878,7 @@ class UgnasNotify(_PluginBase):
                                                                 },
                                                                 {
                                                                     'component': 'span',
-                                                                    'text': ' 项目，实现了插件的相关功能。特此感谢 '
+                                                                    'text': ' 项目,实现了插件的相关功能。特此感谢 '
                                                                 },
                                                                 {
                                                                     'component': 'a',
@@ -916,13 +920,13 @@ class UgnasNotify(_PluginBase):
                                                                     'content': [
                                                                         {
                                                                             'component': 'u',
-                                                                            'text': 'NAS通知早知道，把绿联云NAS里的通知消息定时推送到微信'
+                                                                            'text': 'NAS通知早知道,把绿联云NAS里的通知消息定时推送到微信'
                                                                         }
                                                                     ]
                                                                 },
                                                                 {
                                                                     'component': 'span',
-                                                                    'text': ' 文章，实现插件中绿联NAS登录的相关功能。特此感谢 '
+                                                                    'text': ' 文章,实现插件中绿联NAS登录的相关功能。特此感谢 '
                                                                 },
                                                                 {
                                                                     'component': 'a',
@@ -987,4 +991,4 @@ class UgnasNotify(_PluginBase):
                     logger.info("插件日志：停止定时计划成功!")
                 self._scheduler = None
         except Exception as e:
-            logger.error("插件日志：退出插件失败，错误日志 by %s" % str(e))
+            logger.error("插件日志：退出插件失败,错误日志 by %s" % str(e))

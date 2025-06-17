@@ -1,14 +1,15 @@
 {
     "UgnasNotify": {
-        "author": "Hesssc",
-        "description": "定时获取绿联NAS通知并推送至企业微信。",
+        "author": "Hesccc",
+        "description": "定时获取绿联NAS通知,通过外部消息转发插件转发至企业微信",
         "icon": "brush.jpg",
         "labels": "消息通知",
         "level": 1,
         "name": "绿联NAS通知转发",
         "v2": true,
-        "version": "1.0.4",
+        "version": "1.0.5",
 		"history": {
+            "v1.0.5": "添加NAS连通性检测判断。",
 			"v1.0.4": "修改插件判断auth_info文件是否存在逻辑。",
 			"v1.0.3": "优化插件界面和说明描述。 by 感谢KoWming大佬提供的源码。",
             "v1.0.2": "优化禁用插件后，历史定时任务继续执行问题。",
