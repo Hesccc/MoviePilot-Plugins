@@ -11,6 +11,13 @@ import urllib.request
 import urllib.parse
 from typing import List, Tuple, Dict, Any, Optional, Set
 from datetime import datetime
+from pathlib import Path
+
+# 导入 APScheduler CronTrigger
+try:
+    from apscheduler.triggers.cron import CronTrigger
+except ImportError:
+    CronTrigger = None
 
 # 尝试导入 Paramiko（仅用于远程 SSH 下载器场景）
 try:
@@ -362,7 +369,7 @@ class VoidCleaner(_PluginBase):
 
     plugin_name = "Void 冗余文件清理"
     plugin_desc = "精准扫描并清理下载目录中未在任何客户端做种、未硬链接的残留孤儿文件（支持本地及远程 SSH 下载器）"
-    plugin_version = "1.2.1"
+    plugin_version = "1.2.2"
     plugin_author = "Hescc"
     author_url = "https://github.com/Hesccc/Void"
     plugin_icon = "trash-2.png"
@@ -406,6 +413,16 @@ class VoidCleaner(_PluginBase):
 
     def init_plugin(self, config: Optional[Dict[str, Any]] = None) -> None:
         """MP 启动或用户修改插件配置时调用"""
+        # 确保日志文件存在，防止 Web 界面查看日志时因文件未生成而报 404 Not Found
+        try:
+            log_dir = Path("/config/logs/plugins")
+            if log_dir.exists() and log_dir.is_dir():
+                log_file = log_dir / "voidcleaner.log"
+                if not log_file.exists():
+                    log_file.touch()
+        except Exception:
+            pass
+
         if config:
             self._enabled = bool(config.get("enabled", True))
             self.enable_auto_remove = bool(config.get("enable_auto_remove", False))
@@ -469,15 +486,21 @@ class VoidCleaner(_PluginBase):
 
     def get_service(self) -> Optional[List[Dict[str, Any]]]:
         if self._enabled and self.cron:
-            return [{
-                "id": "VoidCleanerService",
-                "name": "Void 冗余文件定时清理服务",
-                "trigger": "cron",
-                "func": self.scan_and_clean,
-                "kwargs": {
-                    "cron": self.cron
-                }
-            }]
+            try:
+                cron_str = str(self.cron).strip()
+                if cron_str.count(" ") == 4:
+                    trigger = CronTrigger.from_crontab(cron_str) if CronTrigger else "cron"
+                    return [{
+                        "id": "VoidCleanerService",
+                        "name": "Void 冗余文件定时清理服务",
+                        "trigger": trigger,
+                        "func": self.scan_and_clean,
+                        "kwargs": {}
+                    }]
+                else:
+                    logger.error(f"[{self.plugin_name}] cron 表达式格式不正确: {self.cron}")
+            except Exception as e:
+                logger.error(f"[{self.plugin_name}] 注册定时服务失败: {e}")
         return None
 
     def get_form(self) -> Tuple[Optional[List[dict]], Dict[str, Any]]:
