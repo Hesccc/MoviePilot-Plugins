@@ -35,6 +35,13 @@ try:
         from app.sdk.services import DownloaderHelper
     except ImportError:
         DownloaderHelper = None
+    try:
+        from app.application.directory import DirectoryHelper
+    except ImportError:
+        try:
+            from app.helper.directory import DirectoryHelper
+        except ImportError:
+            DirectoryHelper = None
 except ImportError:
     class _PluginBase:
         def __init__(self):
@@ -369,7 +376,7 @@ class VoidCleaner(_PluginBase):
 
     plugin_name = "Void 冗余文件清理"
     plugin_desc = "精准扫描并清理下载目录中未在任何客户端做种、未硬链接的残留孤儿文件（支持本地及远程 SSH 下载器）"
-    plugin_version = "1.2.2"
+    plugin_version = "1.2.3"
     plugin_author = "Hescc"
     author_url = "https://github.com/Hesccc/Void"
     plugin_icon = "trash-2.png"
@@ -591,7 +598,7 @@ class VoidCleaner(_PluginBase):
         return {"code": 0, "msg": "配置保存成功", "data": self.get_current_config()}
 
     def api_get_downloaders(self) -> Dict[str, Any]:
-        """获取 MoviePilot 已注册的所有下载器及存储模式"""
+        """获取 MoviePilot 已注册的所有下载器、系统配置的下载目录及存储模式"""
         downloaders = []
         if DownloaderHelper:
             try:
@@ -614,13 +621,32 @@ class VoidCleaner(_PluginBase):
                 "default": True
             })
 
+        system_directories = []
+        if DirectoryHelper:
+            try:
+                dirs = DirectoryHelper().get_local_download_dirs() or []
+                for d in dirs:
+                    p = getattr(d, "download_path", None)
+                    if p:
+                        clean_p = str(p).removeprefix("local:")
+                        if clean_p and clean_p not in system_directories:
+                            system_directories.append(clean_p)
+            except Exception:
+                pass
+
+        if not system_directories:
+            def_p = self._get_default_local_path()
+            if def_p:
+                system_directories.append(def_p)
+
         return {
             "code": 0,
             "msg": "ok",
             "data": {
                 "downloaders": downloaders,
                 "ssh_nodes": self.ssh_nodes,
-                "mappings": self.downloader_mappings
+                "mappings": self.downloader_mappings,
+                "system_directories": system_directories
             }
         }
 
@@ -940,40 +966,44 @@ class VoidCleaner(_PluginBase):
                 mode = mp.get("mode", "local") if mp else "local"
                 node_id = mp.get("ssh_node_id") if mp else None
 
-                scan_p = ""
                 if mode == "ssh" and node_id:
                     # 远程模式：取用户填写的远程路径或 SSH 节点的默认路径
                     node = node_dict.get(node_id)
                     scan_p = (mp.get("download_path") if mp else "") or (node.get("remote_path") if node else "")
+                    if scan_p:
+                        tasks.append({
+                            "downloader_name": name,
+                            "mode": "ssh",
+                            "ssh_node_id": node_id,
+                            "scan_path": os.path.normpath(scan_p)
+                        })
                 else:
-                    # 本地模式：优先从 MP 下载器配置中的 path_mapping 获取容器内对应的目录映射关系
-                    # conf.path_mapping: [(storage_path, download_path)]
-                    local_dir = ""
+                    # 本地模式：
+                    # 1. 优先从 MP 下载器配置中的 path_mapping 获取容器内对应的目录映射
+                    local_dirs = []
                     path_mappings = getattr(conf, "path_mapping", []) or []
                     for (storage_path, dl_path) in path_mappings:
-                        # storage_path 是 MP 容器内部路径
                         clean_storage_p = storage_path.removeprefix("local:")
                         if clean_storage_p and os.path.exists(clean_storage_p):
-                            local_dir = clean_storage_p
-                            break
+                            local_dirs.append(clean_storage_p)
 
-                    # 其次从用户填写的路径或 MP 全局 DOWNLOAD_PATH 继承
-                    if not local_dir:
-                        custom_p = mp.get("download_path") if mp else ""
-                        if custom_p and os.path.exists(custom_p):
-                            local_dir = custom_p
-                        else:
-                            local_dir = self._get_default_local_path()
+                    # 2. 用户如果手动在插件设置中填写了特定路径
+                    custom_p = (mp.get("download_path") if mp else "").strip()
+                    if custom_p:
+                        local_dirs = [custom_p]
 
-                    scan_p = local_dir
+                    # 3. 否则继承 MP 系统【设定 -> 目录】中配置的所有本地下载目录
+                    if not local_dirs:
+                        local_dirs = self._get_system_download_paths()
 
-                if scan_p:
-                    tasks.append({
-                        "downloader_name": name,
-                        "mode": mode,
-                        "ssh_node_id": node_id if mode == "ssh" else None,
-                        "scan_path": os.path.normpath(scan_p)
-                    })
+                    for lp in local_dirs:
+                        if lp:
+                            tasks.append({
+                                "downloader_name": name,
+                                "mode": "local",
+                                "ssh_node_id": None,
+                                "scan_path": os.path.normpath(lp)
+                            })
 
         # 保底任务
         if not tasks:
@@ -988,8 +1018,52 @@ class VoidCleaner(_PluginBase):
 
         return tasks
 
+    def _get_system_download_paths(self) -> List[str]:
+        """获取 MP 系统目录设置中所有本地下载目录路径列表"""
+        paths = []
+        if DirectoryHelper:
+            try:
+                local_dirs = DirectoryHelper().get_local_download_dirs() or []
+                for d in local_dirs:
+                    p = getattr(d, "download_path", None)
+                    if p:
+                        clean_p = str(p).removeprefix("local:")
+                        if clean_p and os.path.exists(clean_p) and clean_p not in paths:
+                            paths.append(clean_p)
+                # 即使容器内临时不存在也先加入备选
+                if not paths and local_dirs:
+                    for d in local_dirs:
+                        p = getattr(d, "download_path", None)
+                        if p:
+                            clean_p = str(p).removeprefix("local:")
+                            if clean_p and clean_p not in paths:
+                                paths.append(clean_p)
+            except Exception:
+                pass
+
+        if not paths:
+            def_p = self._get_default_local_path()
+            if def_p:
+                paths.append(def_p)
+
+        return paths
+
     def _get_default_local_path(self) -> str:
-        """获取本地下载路径"""
+        """获取本地首选下载路径"""
+        if DirectoryHelper:
+            try:
+                local_dirs = DirectoryHelper().get_local_download_dirs() or []
+                for d in local_dirs:
+                    p = getattr(d, "download_path", None)
+                    if p:
+                        clean_p = str(p).removeprefix("local:")
+                        if clean_p and os.path.exists(clean_p):
+                            return clean_p
+                if local_dirs and getattr(local_dirs[0], "download_path", None):
+                    return str(local_dirs[0].download_path).removeprefix("local:")
+            except Exception:
+                pass
+
         if hasattr(settings, "DOWNLOAD_PATH") and settings.DOWNLOAD_PATH:
             if isinstance(settings.DOWNLOAD_PATH, list) and settings.DOWNLOAD_PATH:
                 return str(settings.DOWNLOAD_PATH[0])
